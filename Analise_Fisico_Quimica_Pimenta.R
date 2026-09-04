@@ -630,17 +630,106 @@ print(tukey_umidade$groups)
 
 
 
+df_cinzas <- read_excel("Banco_Fabiana.xlsx", sheet = "Banco_Cinzas")
+
+df_cinzas_limpo <- df_cinzas %>%
+  mutate(Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+         Meses = factor(Meses, levels = c("Fevereiro", "Março", "Abril", "Maio", "Junho")),
+         Pimenta = factor(str_trim(Pimenta))) %>%
+  rename(Cinzas = `% Cinzas`)
+
+tabela_cinzas <- df_cinzas_limpo %>%
+  tbl_continuous(
+    variable = Cinzas,
+    by = Meses,
+    include = Pimenta,
+    statistic = ~ "{mean} ± {sd}",
+    digits = ~ 2
+  ) %>%
+  modify_header(label = "**Tratamento (Pimenta)**") %>%
+  modify_caption("**Tabela 4. Evolução do teor de Cinzas (%) (Média ± SD) ao longo do armazenamento.**") %>%
+  bold_labels()
+
+tabela_cinzas
+
+
+
+# Usa o mesmo df_cinzas_limpo gerado no script acima
+modelo_cinzas <- aov(Cinzas ~ Pimenta * Meses, data = df_cinzas_limpo)
+
+print("--- ANOVA DAS CINZAS ---")
+summary(modelo_cinzas)
+
+# Interação
+df_cinzas_limpo$Trat_Mes <- interaction(df_cinzas_limpo$Pimenta, df_cinzas_limpo$Meses, sep = " em ")
+modelo_int_cinzas <- aov(Cinzas ~ Trat_Mes, data = df_cinzas_limpo)
+
+tukey_cinzas <- HSD.test(modelo_int_cinzas, "Trat_Mes", group = TRUE)
+print(tukey_cinzas$groups)
 
 
 
 
 
+# 4. Criar a tabela de resumo para as linhas (Média e SD)
+df_resumo_cinzas <- df_cinzas_limpo %>%
+  group_by(Meses, Pimenta) %>%
+  summarise(
+    Media = mean(Cinzas, na.rm = TRUE),
+    SD = sd(Cinzas, na.rm = TRUE),
+    .groups = "drop"
+  )
 
+# 5. Definir o deslocamento (dodge) para as barras de erro não se sobreporem
+pd <- position_dodge(width = 0.4)
 
+# 6. Criar o Gráfico de Tendência
+grafico_tendencia_cinzas <- ggplot() +
+  
+  geom_jitter(data = df_cinzas_limpo, aes(x = Meses, y = Cinzas, group = Pimenta),
+              position = position_jitterdodge(jitter.width = 0.05, dodge.width = 0.4),
+              color = "gray60", alpha = 0.5, size = 2) +
+  
+  geom_errorbar(data = df_resumo_cinzas, aes(x = Meses, ymin = Media - SD, ymax = Media + SD, group = Pimenta, color = Pimenta),
+                position = pd, width = 0.2, size = 0.8) +
+  
+  geom_line(data = df_resumo_cinzas, aes(x = Meses, y = Media, group = Pimenta, color = Pimenta),
+            position = pd, size = 1.2) +
+  
+  geom_point(data = df_resumo_cinzas, aes(x = Meses, y = Media, fill = Pimenta, group = Pimenta),
+             shape = 21, size = 4, color = "black", stroke = 1, position = pd) +
+  
+  scale_color_brewer(palette = "Dark2") +
+  scale_fill_brewer(palette = "Dark2") +
+  
+  # Forçando o eixo Y a ter espaço de sobra na parte de baixo para a legenda não cobrir nada
+  scale_y_continuous(limits = c(3.5, 5.5)) +
+  
+  labs(
+    title = "Tendência do Teor de Cinzas ao Longo do Armazenamento",
+    x = "Meses de Armazenamento",
+    y = "Cinzas (%)",
+    fill = "Tratamento",
+    color = "Tratamento"
+  ) +
+  
+  theme_bw() +
+  theme(
+    text = element_text(size = 12),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    panel.grid.minor = element_blank(),
+    
+    # Legenda agora fica no canto inferior esquerdo, na vertical, elegante e compacta
+    legend.position = c(0.20, 0.22), 
+    legend.background = element_rect(fill = alpha("white", 0.9), color = "black", size = 0.3),
+    legend.title = element_text(face = "bold"),
+    legend.text = element_text(size = 9),
+    legend.direction = "vertical",
+    legend.key.height = unit(0.8, "cm") # Dá um respiro entre as linhas da legenda
+  )
 
-
-
-
+# Exibir o gráfico no RStudio
+print(grafico_tendencia_cinzas)
 
 
 
