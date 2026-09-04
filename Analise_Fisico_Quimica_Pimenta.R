@@ -735,3 +735,396 @@ print(grafico_tendencia_cinzas)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#------------------------------------------------------------------------------#
+# Atributo : Proteínas
+
+
+# 2. Importar e limpar
+df_prot <- read_excel("Banco_Fabiana.xlsx", sheet = "Banco_Proteinas") %>%
+  mutate(Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+         Meses = factor(Meses, levels = c("Fevereiro", "Março", "Abril", "Maio", "Junho")),
+         Pimenta = factor(str_trim(Pimenta))) %>%
+  rename(Proteina = `% Proteína`)
+
+# 3. Gerar a tabela com gtsummary
+tabela_prot <- df_prot %>%
+  tbl_continuous(
+    variable = Proteina,
+    by = Meses,
+    include = Pimenta,
+    statistic = ~ "{mean} ± {sd}",
+    digits = ~ 2
+  ) %>%
+  modify_header(label = "**Tratamento (Pimenta)**") %>%
+  modify_caption("**Tabela 6. Evolução do teor de Proteínas (%) (Média ± SD) ao longo do armazenamento.**") %>%
+  bold_labels()
+
+# Exibir tabela
+tabela_prot
+
+
+
+
+# 4. Criar a tabela de resumo para as linhas (Média e SD)
+df_resumo_prot <- df_prot %>%
+  group_by(Meses, Pimenta) %>%
+  summarise(
+    Media = mean(Proteina, na.rm = TRUE),
+    SD = sd(Proteina, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# 5. Definir o deslocamento (dodge) para as linhas não se sobreporem
+pd <- position_dodge(width = 0.4)
+
+# 6. Criar o Gráfico de Tendência (com legenda interna)
+grafico_tendencia_prot <- ggplot() +
+  
+  # CAMADA 1: Pontos de dados brutos (transparência ao fundo)
+  geom_jitter(
+    data = df_prot, 
+    aes(x = Meses, y = Proteina, group = Pimenta),
+    position = position_jitterdodge(jitter.width = 0.05, dodge.width = 0.4),
+    color = "gray60", alpha = 0.5, size = 2
+  ) +
+  
+  # CAMADA 2: Barras de erro (Média ± SD)
+  geom_errorbar(
+    data = df_resumo_prot, 
+    aes(x = Meses, ymin = Media - SD, ymax = Media + SD, group = Pimenta, color = Pimenta),
+    position = pd, width = 0.2, size = 0.8
+  ) +
+  
+  # CAMADA 3: Linhas conectando as médias
+  geom_line(
+    data = df_resumo_prot, 
+    aes(x = Meses, y = Media, group = Pimenta, color = Pimenta),
+    position = pd, size = 1.2
+  ) +
+  
+  # CAMADA 4: Pontos das médias (Grandes e com borda preta)
+  geom_point(
+    data = df_resumo_prot, 
+    aes(x = Meses, y = Media, fill = Pimenta, group = Pimenta),
+    shape = 21, size = 4, color = "black", stroke = 1, position = pd
+  ) +
+  
+  # Cores contrastantes ("Dark2")
+  scale_color_brewer(palette = "Dark2") +
+  scale_fill_brewer(palette = "Dark2") +
+  
+  # Ajuste do eixo Y para criar um "céu" vazio no topo para a legenda
+  scale_y_continuous(limits = c(8, 14.5)) + 
+  
+  # Textos e Títulos
+  labs(
+    title = "Parâmetros Físico-Químico",
+    # x = "Meses de Acompanhamento",
+    y = "Proteína (%)",
+    fill = "Tratamento",
+    color = "Tratamento"
+  ) +
+  
+  # Tema limpo e Posicionamento da Legenda Interna
+  theme_bw() +
+  theme(
+    text = element_text(size = 12),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    panel.grid.minor = element_blank(),
+    
+    # Colocando a legenda no canto superior direito. 
+    # Usei 0.70 no X para o texto longo não vazar do gráfico
+    legend.position = c(0.85, 0.14), 
+    legend.background = element_rect(fill = "white", color = "black", size = 0.3),
+    legend.title = element_text(face = "bold")
+  )
+
+# Exibir o gráfico no RStudio
+print(grafico_tendencia_prot)
+
+
+
+
+
+
+
+
+
+
+# 1. Definir a Linha Base e Limites (Fevereiro - In Natura)
+base_prot <- df_prot %>% filter(Pimenta == "In Natura", Meses == "Fevereiro")
+media_base <- mean(base_prot$Proteina, na.rm = TRUE) # 10.69
+sd_base <- sd(base_prot$Proteina, na.rm = TRUE)      # 0.21
+LSC <- media_base + (3 * sd_base)                    # 11.32
+LIC <- media_base - (3 * sd_base)                    # 10.06
+
+# 2. Resumo de Médias de Todos os Tratamentos
+df_medias_todas <- df_prot %>%
+  group_by(Meses, Pimenta) %>%
+  summarise(Media = mean(Proteina, na.rm=TRUE), SD = sd(Proteina, na.rm=TRUE), .groups="drop")
+
+# 3. GRÁFICO 1: Apenas In Natura
+graf_controle_innatura <- ggplot(df_medias_todas %>% filter(Pimenta == "In Natura"), aes(x = Meses, y = Media, group = 1)) +
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = LIC, ymax = LSC, fill = "gray70", alpha = 0.3) +
+  geom_ribbon(aes(ymin = Media - SD, ymax = Media + SD, fill = "Dispersão Amostral"), alpha = 0.2) +
+  geom_hline(aes(yintercept = media_base, color = "Média Referência"), linetype = "dashed", size = 0.8) +
+  geom_hline(aes(yintercept = LSC, color = "LSC (+3 SD)"), linetype = "dotted", size = 1) +
+  geom_hline(aes(yintercept = LIC, color = "LIC (-3 SD)"), linetype = "dotted", size = 1) +
+  geom_line(color = "blue", size = 1.2) + geom_point(size = 4, shape = 21, fill = "blue", color = "white", stroke = 1.2) +
+  scale_color_manual(name = "Limites", values = c("Média Referência" = "darkgreen", "LSC (+3 SD)" = "red", "LIC (-3 SD)" = "red")) +
+  scale_fill_manual(name = "", values = c("Dispersão Amostral" = "blue")) +
+  labs(title = "Controle de Estabilidade - Proteína (In Natura)", x = "Mês", y = "Proteína (%)") +
+  theme_bw() + theme(legend.position = "bottom")
+
+# 4. GRÁFICO 2: Todos os Tratamentos na Zona de Controle
+graf_controle_todos <- ggplot(df_medias_todas, aes(x = Meses, y = Media, group = Pimenta, color = Pimenta)) +
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = LIC, ymax = LSC, fill = "gray70", alpha = 0.3) +
+  geom_hline(yintercept = media_base, linetype = "dashed", color = "darkgreen", size = 0.8) +
+  geom_hline(yintercept = LSC, linetype = "dotted", color = "red", size = 1) +
+  geom_hline(yintercept = LIC, linetype = "dotted", color = "red", size = 1) +
+  geom_line(size = 1.2) + geom_point(aes(fill = Pimenta), shape = 21, size = 3, color = "black") +
+  scale_color_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
+  labs(title = "Controle de Estabilidade Comparativo - Proteína", x = "Mês", y = "Proteína (%)") +
+  theme_bw() + theme(legend.position = "bottom", legend.direction = "vertical")
+
+print(graf_controle_innatura)
+print(graf_controle_todos)
+
+
+
+
+# 1. ANOVA Fatorial
+modelo_prot <- aov(Proteina ~ Pimenta * Meses, data = df_prot)
+print("--- ANOVA ---")
+summary(modelo_prot)
+
+# 2. Tukey para a Interação
+df_prot$Trat_Mes <- interaction(df_prot$Pimenta, df_prot$Meses, sep = " em ")
+tukey_prot <- HSD.test(aov(Proteina ~ Trat_Mes, data = df_prot), "Trat_Mes", group = TRUE)
+print("--- TESTE DE TUKEY ---")
+print(tukey_prot$groups)
+
+
+
+
+# Grafico 2 Controle estabilidade
+
+# 1. Preparar os dados (Usando o df_prot que já importamos antes)
+df_in_natura_prot <- df_prot %>%
+  filter(Pimenta == "In Natura")
+
+# 2. Calcular Limites Baseados em Fevereiro (Proteína)
+baseline_prot <- df_in_natura_prot %>% filter(Meses == "Fevereiro")
+media_controle_prot <- mean(baseline_prot$Proteina, na.rm = TRUE)
+sd_controle_prot <- sd(baseline_prot$Proteina, na.rm = TRUE)
+
+LSC_prot <- media_controle_prot + (3 * sd_controle_prot) # Limite Superior
+LIC_prot <- media_controle_prot - (3 * sd_controle_prot) # Limite Inferior
+
+# 3. Calcular a Evolução (Média e Desvio Padrão para a faixa azul)
+df_medias_prot <- df_in_natura_prot %>%
+  group_by(Meses) %>%
+  summarise(
+    Media = mean(Proteina, na.rm = TRUE),
+    SD = sd(Proteina, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# 4. Construir o Gráfico de Controle
+grafico_controle_in_natura_prot <- ggplot(df_medias_prot, aes(x = Meses, y = Media, group = 1)) +
+  
+  # Zona de Estabilidade (Faixa cinza ao fundo calculada com 3 SD)
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = LIC_prot, ymax = LSC_prot, 
+           fill = "gray70", alpha = 0.3) +
+  
+  # A FAIXA AZUL: O nome aqui precisa bater com o scale_fill_manual
+  geom_ribbon(aes(ymin = Media - SD, ymax = Media + SD, fill = "Zona de Estabilidade"), alpha = 0.2) +
+  
+  # LINHAS DE CONTROLE: Atualizadas com os valores de Proteína
+  geom_hline(aes(yintercept = media_controle_prot, color = "Média"), linetype = "dashed", size = 0.8) +
+  geom_hline(aes(yintercept = LSC_prot, color = "LSC (+3 SD: 11.3%)"), linetype = "dotted", size = 1) +
+  geom_hline(aes(yintercept = LIC_prot, color = "LIC (-3 SD: 10.1%)"), linetype = "dotted", size = 1) +
+  
+  # Linha e pontos principais
+  geom_line(color = "blue", size = 1.2) +
+  geom_point(size = 4, shape = 21, fill = "blue", color = "white", stroke = 1.2) +
+  
+  # Configuração manual das cores e nomes da Legenda
+  scale_color_manual(name = "Legendas", 
+                     values = c("Média" = "darkgreen", 
+                                "LSC (+3 SD: 11.3%)" = "red", 
+                                "LIC (-3 SD: 10.1%)" = "red")) +
+  
+  scale_fill_manual(name = "Dispersão", 
+                    values = c("Zona de Estabilidade" = "blue")) +
+  
+  # Textos e Títulos
+  labs(
+    title = "Gráfico de Controle de Estabilidade - Proteína (In Natura)",
+    subtitle = "Evolução da proteína com intervalo de dispersão amostral",
+    y = "Proteína (%)",
+  ) +
+  
+  # Tema limpo e posicionamento da legenda INTERNA
+  theme_bw() +
+  theme(
+    text = element_text(size = 12),
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank(),
+    
+    # Coloca a legenda no canto inferior esquerdo (dentro do gráfico) exatamente como o modelo
+    legend.position = c(0.13, 0.80), 
+    legend.background = element_rect(fill = "white", color = "black", size = 0.3),
+    legend.margin = margin(5, 5, 5, 5),
+    legend.title = element_text(face = "bold", size = 10),
+    legend.text = element_text(size = 9)
+  )
+
+# Exibir o gráfico no RStudio
+print(grafico_controle_in_natura_prot)
+
+
+
+
+#------------------------------------------------------------------------------#
+# MODELOS MULTIVARIADOS
+
+# 1. Carregar Pacotes Essenciais
+library(FactoMineR)
+library(factoextra)
+
+# 2. Função rápida para importar e padronizar os nomes de Pimenta e Meses
+limpar_base <- function(aba, var_resposta) {
+  df <- read_excel("Banco_Fabiana.xlsx", sheet = aba)
+  
+  # Padronizar nomes
+  df <- df %>%
+    mutate(Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+           Pimenta = str_trim(Pimenta))
+  
+  # Calcular a média por Tratamento e Mês
+  df_media <- df %>%
+    group_by(Pimenta, Meses) %>%
+    summarise(Media_Var = mean(!!sym(var_resposta), na.rm = TRUE), .groups = "drop")
+  
+  # Renomear a coluna da média para o nome real da variável
+  colnames(df_media)[3] <- aba 
+  return(df_media)
+}
+
+# 3. Importar as 4 planilhas e extrair as médias
+df_acidez <- limpar_base("Banco_Acidez", "% acidez")
+df_umidade <- limpar_base("Banco_Umidade", "% umidade")
+df_cinzas <- limpar_base("Banco_Cinzas", "% Cinzas")
+df_proteina <- limpar_base("Banco_Proteinas", "% Proteína")
+
+# 4. Fundir (Merge) todas as planilhas em um único Banco Multivariado
+df_multivariado <- df_acidez %>%
+  left_join(df_umidade, by = c("Pimenta", "Meses")) %>%
+  left_join(df_cinzas, by = c("Pimenta", "Meses")) %>%
+  left_join(df_proteina, by = c("Pimenta", "Meses"))
+
+# Renomear colunas para ficar elegante no gráfico
+colnames(df_multivariado) <- c("Tratamento", "Mes", "Acidez", "Umidade", "Cinzas", "Proteina")
+
+# Criar uma coluna combinada "Tratamento_Mes" para ser o rótulo dos pontos no gráfico
+df_multivariado <- df_multivariado %>%
+  mutate(Rotulo = paste(Tratamento, Mes, sep = " - ")) %>%
+  as.data.frame()
+
+# Transformar o rótulo no "nome da linha" (rownames) para o pacote de PCA reconhecer
+rownames(df_multivariado) <- df_multivariado$Rotulo
+
+# 5. Executar a PCA (Apenas nas colunas 3 a 6, que são os números)
+res.pca <- PCA(df_multivariado[, 3:6], scale.unit = TRUE, graph = FALSE)
+
+# 6. Gerar o Gráfico Biplot (Indivíduos + Variáveis)
+grafico_pca <- fviz_pca_biplot(res.pca,
+                               
+                               # Configuração das Setas (Variáveis Físico-Químicas)
+                               col.var = "red",          # Cor das setas
+                               arrowsize = 0.8,
+                               labelsize = 5,
+                               repel = TRUE,             # Evita que os textos se sobreponham
+                               
+                               # Configuração dos Pontos (Tratamentos)
+                               col.ind = df_multivariado$Tratamento, # Colore os pontos pelo Tratamento
+                               palette = "Dark2",                    # Paleta de cores contrastantes
+                               addEllipses = TRUE,                   # Desenha elipses ao redor dos grupos
+                               ellipse.level = 0.95,
+                               pointsize = 3,
+                               
+                               # Textos
+                               title = "Análise de Componentes Principais (PCA) - Perfil de Qualidade",
+                               legend.title = "Tratamento") +
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+
+# Exibir o gráfico
+print(grafico_pca)
+
+
+
+# 6. Gerar o Gráfico PCA (Versão Clean)
+grafico_pca_limpo <- fviz_pca_biplot(res.pca,
+                                     
+                                     # --- CONFIGURAÇÃO DOS INDIVÍDUOS (As amostras) ---
+                                     geom.ind = "point",        # O SEGREDO 1: Manda desenhar SÓ o ponto, removendo os textos poluidos
+                                     col.ind = df_multivariado$Tratamento,
+                                     fill.ind = df_multivariado$Tratamento,
+                                     palette = "Dark2",
+                                     pointsize = 4,             # Aumenta a bolinha para compensar a falta de texto
+                                     pointshape = 21,           # Bolinha com borda
+                                     
+                                     addEllipses = TRUE,        
+                                     ellipse.level = 0.95,
+                                     ellipse.alpha = 0.15,      # O SEGREDO 2: Deixa as elipses bem clarinhas/transparentes
+                                     
+                                     # --- CONFIGURAÇÃO DAS VARIÁVEIS (As setas vermelhas) ---
+                                     label = "var",             # O SEGREDO 3: Manda colocar texto APENAS nas setas (Umidade, etc)
+                                     col.var = "red",          
+                                     arrowsize = 0.8,
+                                     labelsize = 5,
+                                     repel = TRUE,              # Afasta o nome da variável da ponta da seta
+                                     
+                                     # --- TEXTOS E TEMAS ---
+                                     title = "Análise de Componentes Principais (PCA) - Perfil de Qualidade",
+                                     legend.title = "Tratamento"
+) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 12),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "bottom"
+  ) +
+  # Força a legenda a ter 2 colunas para ficar elegante na base
+  guides(color = guide_legend(ncol = 2), fill = guide_legend(ncol = 2))
+
+# Exibir o gráfico limpo
+print(grafico_pca_limpo)
+
+
+
+
+
+
+
+
+
+
