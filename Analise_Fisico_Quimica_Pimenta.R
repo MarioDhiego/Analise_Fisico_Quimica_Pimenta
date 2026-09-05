@@ -1547,20 +1547,52 @@ df_aw <- read_excel("Banco_Fabiana.xlsx", sheet = "Atividade_de_Agua") %>%
          Pimenta = factor(str_trim(Pimenta))) %>%
   rename(Aw = `Valor aferido`)
 
-# 2. Gerar Gráfico de Trajetória Absoluta (Sem barras de erro devido a N=1)
 grafico_aw <- ggplot(df_aw, aes(x = Meses, y = Aw, group = Pimenta, color = Pimenta)) +
-  # Faixa de Segurança Microbiológica (Fundo verde clarinho indicando estabilidade)
+  
+  # Faixa de Segurança Microbiológica (Fundo verde clarinho)
   annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0, ymax = 0.65, fill = "lightgreen", alpha = 0.2) +
+  
+  # Linhas e Pontos
   geom_line(size = 1.2) +
   geom_point(aes(fill = Pimenta), shape = 21, size = 4, color = "black", stroke = 1) +
-  scale_color_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
-  labs(title = "Evolução da Atividade de Água (Aw)", x = "Meses de Armazenamento", y = "Atividade de Água (Aw)") +
+  
+  # Cores
+  scale_color_brewer(palette = "Dark2") + 
+  scale_fill_brewer(palette = "Dark2") +
+  
+  # Textos
+  labs(
+    title = "Parâmetros Físico-Químico", 
+    #x = "Meses de Armazenamento", 
+    y = "Atividade de Água (Aw)",
+    color = "Tratamento",
+    fill = "Tratamento"
+  ) +
+  
+  # Tema e Posição da Legenda
   theme_bw() +
-  theme(legend.position = "bottom", plot.title = element_text(face = "bold", hjust = 0.5),
-        text = element_text(size = 12)) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    text = element_text(size = 12),
+    
+    # --- O SEGREDO ESTÁ AQUI: LEGENDA INTERNA NA PARTE INFERIOR ---
+    # 0.5 centraliza no eixo X, e 0.18 coloca bem perto do eixo Y inferior
+    legend.position = c(0.7, 0.15), 
+    
+    # Fundo branco com borda preta para não misturar com o fundo verde
+    legend.background = element_rect(fill = alpha("white", 0.9), color = "black", size = 0.3),
+    legend.title = element_text(face = "bold", size = 10),
+    legend.text = element_text(size = 9),
+    legend.margin = margin(4, 4, 4, 4)
+  ) +
+  
+  # Mantém a legenda em 2 colunas para ficar compacta
   guides(color = guide_legend(ncol = 2), fill = guide_legend(ncol = 2))
 
+# Exibir o gráfico atualizado
 print(grafico_aw)
+
+
 
 
 
@@ -1577,7 +1609,9 @@ grafico_ph <- ggplot(df_ph, aes(x = Meses, y = pH, group = Pimenta, color = Pime
   geom_line(size = 1.2) +
   geom_point(aes(fill = Pimenta), shape = 21, size = 4, color = "black", stroke = 1) +
   scale_color_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
-  labs(title = "Evolução do pH", x = "Meses de Armazenamento", y = "pH") +
+  labs(title = "Parâmetros Físico-Químico", 
+       #x = "Meses de Armazenamento", 
+       y = "Potencial Hidrogeniônico (pH)") +
   theme_bw() +
   theme(legend.position = "bottom", plot.title = element_text(face = "bold", hjust = 0.5),
         text = element_text(size = 12)) +
@@ -1628,7 +1662,305 @@ tabela_ph
 
 
 
+#------------------------------
 
+# MODELO MULTIVARIADO - PCA 
+
+# 1. Carregar Pacotes
+library(readxl)
+library(dplyr)
+library(stringr)
+library(FactoMineR)
+library(factoextra)
+
+# 2. Definir o caminho do ÚNICO arquivo
+arquivo_unico <- "Banco_fabiana.xlsx" # COLOQUE O NOME DO SEU ARQUIVO AQUI
+
+# 3. Funções de extração rápida (puxando tudo do mesmo arquivo)
+limpar_base <- function(aba, var_orig, var_nova) {
+  read_excel(arquivo_unico, sheet = aba) %>%
+    mutate(Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+           Pimenta = str_trim(Pimenta)) %>%
+    group_by(Pimenta, Meses) %>%
+    summarise(!!sym(var_nova) := mean(!!sym(var_orig), na.rm = TRUE), .groups = "drop")
+}
+
+limpar_ph <- function() {
+  read_excel(arquivo_unico, sheet = "pH") %>%
+    rename(Meses = Fevereiro, pH = `pH Aferido`) %>% # Ajuste caso a coluna de meses se chame Fevereiro
+    mutate(Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+           Pimenta = str_trim(Pimenta)) %>%
+    group_by(Pimenta, Meses) %>%
+    summarise(pH = mean(pH, na.rm = TRUE), .groups = "drop")
+}
+
+# 4. Extrair os dados de cada aba do mesmo arquivo
+df_acidez   <- limpar_base("Banco_Acidez", "% acidez", "Acidez")
+df_umidade  <- limpar_base("Banco_Umidade", "% umidade", "Umidade")
+df_cinzas   <- limpar_base("Banco_Cinzas", "% Cinzas", "Cinzas")
+df_proteina <- limpar_base("Banco_Proteinas", "% Proteína", "Proteina")
+df_lipidios <- limpar_base("Banco_Lipidios", "% Lipídios", "Lipidios")
+df_aw       <- limpar_base("Atividade_de_Agua", "Valor aferido", "Aw")
+df_ph       <- limpar_ph()
+
+# 5. Fundir tudo em uma única Super Tabela
+df_global <- df_umidade %>%
+  left_join(df_acidez, by = c("Pimenta", "Meses")) %>%
+  left_join(df_cinzas, by = c("Pimenta", "Meses")) %>%
+  left_join(df_proteina, by = c("Pimenta", "Meses")) %>%
+  left_join(df_lipidios, by = c("Pimenta", "Meses")) %>%
+  left_join(df_aw, by = c("Pimenta", "Meses")) %>%
+  left_join(df_ph, by = c("Pimenta", "Meses"))
+
+# Criar rótulos e descartar as 4 linhas incompletas da Acidez
+df_global <- df_global %>% na.omit()
+rownames(df_global) <- paste(df_global$Pimenta, df_global$Meses, sep = " - ")
+
+# 6. Executar a PCA Final (Colunas 3 a 9)
+res.pca.global <- PCA(df_global[, 3:9], scale.unit = TRUE, graph = FALSE)
+
+# 7. Gerar o Gráfico PCA
+grafico_pca_global <- fviz_pca_biplot(res.pca.global,
+                                      geom.ind = "point",        
+                                      col.ind = df_global$Pimenta,
+                                      fill.ind = df_global$Pimenta,
+                                      palette = "Dark2",
+                                      pointsize = 4,             
+                                      pointshape = 21,           
+                                      addEllipses = TRUE,        
+                                      ellipse.level = 0.95,
+                                      ellipse.alpha = 0.15,      
+                                      label = "var",             
+                                      col.var = "red",          
+                                      arrowsize = 0.8,
+                                      labelsize = 5,
+                                      repel = TRUE,              
+                                      title = "Modelo Multivariado Global (PCA) - Parâmetros Físico-Químicos",
+                                      legend.title = "Tratamento"
+) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 12),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "bottom"
+  ) +
+  guides(color = guide_legend(ncol = 2), fill = guide_legend(ncol = 2))
+
+print(grafico_pca_global)
+
+
+
+
+
+
+
+# 1. Carregar Pacotes
+library(dplyr)
+library(fmsb) 
+
+# 2. Filtrar apenas o mês de JUNHO da nossa base global já criada
+# (Certifique-se de que o df_global do script anterior está na memória do R)
+df_junho <- df_global %>%
+  filter(grepl("Junho", rownames(.)))
+
+# 3. Preparar a base matemática para o Radar
+# O radar precisa de apenas números e os tratamentos como nome das linhas
+dados_radar <- df_junho %>%
+  select(Acidez, Umidade, Cinzas, Proteina, Lipidios, Aw, pH)
+
+# Extrair os nomes limpos dos tratamentos (Tirando o " - Junho")
+rownames(dados_radar) <- gsub(" - Junho", "", rownames(dados_radar))
+
+# 4. Escalonamento (O truque mágico do Radar)
+# O pacote fmsb exige que as duas primeiras linhas da tabela sejam o Máximo e o Mínimo de cada coluna
+max_lim <- apply(dados_radar, 2, max) * 1.1 # 10% acima do máximo real para dar margem visual
+min_lim <- apply(dados_radar, 2, min) * 0.9 # 10% abaixo do mínimo real para dar margem visual
+
+dados_radar_final <- rbind(max_lim, min_lim, dados_radar)
+dados_radar_final <- as.data.frame(dados_radar_final)
+
+# 5. Configurar Cores Profissionais
+cores_borda <- c("#1B9E77", "#D95F02", "#7570B3", "#E7298A")
+cores_fundo <- scales::alpha(cores_borda, 0.2) # Deixa o fundo 20% transparente
+
+# 6. Gerar o Gráfico de Radar
+# Ajustando as margens para a legenda não cortar
+par(mar = c(5, 2, 4, 2) + 0.1) 
+
+radarchart(
+  dados_radar_final,
+  
+  # Estética da Teia
+  pcol = cores_borda,         # Cores das linhas
+  pfcol = cores_fundo,        # Cores do preenchimento
+  plwd = 2,                   # Espessura da linha
+  plty = 1,                   # Tipo de linha (sólida)
+  
+  # Estética dos Eixos
+  cglcol = "grey50",          # Cor da teia de aranha
+  cglty = 3,                  # Tipo de linha da teia (pontilhada)
+  cglwd = 1,                  # Espessura da teia
+  axislabcol = "grey30",      # Cor dos rótulos dos eixos
+  
+  # Textos
+  vlcex = 0.9,                # Tamanho da fonte das variáveis
+  title = "Impressão Digital Físico-Química ao Final da Estocagem (Mês de Junho)"
+)
+
+# 7. Adicionar Legenda Externa na Base
+legend(
+  x = "bottom", 
+  legend = rownames(dados_radar_final[-c(1,2), ]), 
+  col = cores_borda, 
+  bty = "n", 
+  pch = 15,                   # Símbolo de quadradinho
+  pt.cex = 2,                 # Tamanho do quadradinho
+  cex = 0.9,                  # Tamanho do texto
+  text.col = "black",
+  horiz = FALSE,              
+  ncol = 2,                   # Duas colunas para ficar elegante
+  inset = c(0, -0.2)          # Desloca a legenda para fora da teia
+)
+
+
+
+
+# 1. Carregar Pacotes
+library(dplyr)
+library(fmsb) # Pacote de Ouro para Gráficos de Radar
+
+# 2. Filtrar apenas o mês de JUNHO da nossa base global já criada
+# (Certifique-se de que o df_global do script anterior está na memória do R)
+df_junho <- df_global %>%
+  filter(grepl("Junho", rownames(.)))
+
+# 3. Preparar a base matemática para o Radar
+# O radar precisa de apenas números e os tratamentos como nome das linhas
+dados_radar <- df_junho %>%
+  select(Acidez, Umidade, Cinzas, Proteina, Lipidios, Aw, pH)
+
+# Extrair os nomes limpos dos tratamentos (Tirando o " - Junho")
+rownames(dados_radar) <- gsub(" - Junho", "", rownames(dados_radar))
+
+# 4. Escalonamento (O truque mágico do Radar)
+# O pacote fmsb exige que as duas primeiras linhas da tabela sejam o Máximo e o Mínimo de cada coluna
+max_lim <- apply(dados_radar, 2, max) * 1.1 # 10% acima do máximo real para dar margem visual
+min_lim <- apply(dados_radar, 2, min) * 0.9 # 10% abaixo do mínimo real para dar margem visual
+
+dados_radar_final <- rbind(max_lim, min_lim, dados_radar)
+dados_radar_final <- as.data.frame(dados_radar_final)
+
+# 5. Configurar Cores Profissionais
+cores_borda <- c("#1B9E77", "#D95F02", "#7570B3", "#E7298A")
+cores_fundo <- scales::alpha(cores_borda, 0.2) # Deixa o fundo 20% transparente
+
+# 6. Gerar o Gráfico de Radar
+# Ajustando as margens para a legenda não cortar
+par(mar = c(5, 2, 4, 2) + 0.1) 
+
+radarchart(
+  dados_radar_final,
+  
+  # Estética da Teia
+  pcol = cores_borda,         # Cores das linhas
+  pfcol = cores_fundo,        # Cores do preenchimento
+  plwd = 2,                   # Espessura da linha
+  plty = 1,                   # Tipo de linha (sólida)
+  
+  # Estética dos Eixos
+  cglcol = "grey50",          # Cor da teia de aranha
+  cglty = 3,                  # Tipo de linha da teia (pontilhada)
+  cglwd = 1,                  # Espessura da teia
+  axislabcol = "grey30",      # Cor dos rótulos dos eixos
+  
+  # Textos
+  vlcex = 0.9,                # Tamanho da fonte das variáveis
+  title = "Impressão Digital Físico-Química ao Final da Estocagem (Mês de Junho)"
+)
+
+# 7. Adicionar Legenda Externa na Base
+legend(
+  x = "bottom", 
+  legend = rownames(dados_radar_final[-c(1,2), ]), 
+  col = cores_borda, 
+  bty = "n", 
+  pch = 15,                   # Símbolo de quadradinho
+  pt.cex = 2,                 # Tamanho do quadradinho
+  cex = 0.9,                  # Tamanho do texto
+  text.col = "black",
+  horiz = FALSE,              
+  ncol = 2,                   # Duas colunas para ficar elegante
+  inset = c(0, -0.2)          # Desloca a legenda para fora da teia
+)
+
+
+
+
+library(dplyr)
+library(fmsb)
+library(scales)
+
+# 1. Recriar a Tabela Global SEM apagar os dados vazios (sem na.omit)
+df_radar <- df_umidade %>%
+  left_join(df_acidez, by = c("Pimenta", "Meses")) %>%
+  left_join(df_cinzas, by = c("Pimenta", "Meses")) %>%
+  left_join(df_proteina, by = c("Pimenta", "Meses")) %>%
+  left_join(df_lipidios, by = c("Pimenta", "Meses")) %>%
+  left_join(df_aw, by = c("Pimenta", "Meses")) %>%
+  left_join(df_ph, by = c("Pimenta", "Meses"))
+
+# 2. O TRUQUE: Preencher a Acidez faltante de Março com a média do tratamento
+# Isso permite que a teia de aranha se feche no desenho
+df_radar <- df_radar %>%
+  group_by(Pimenta) %>%
+  mutate(Acidez = ifelse(is.na(Acidez), mean(Acidez, na.rm = TRUE), Acidez)) %>%
+  ungroup() %>%
+  as.data.frame()
+
+# 3. Calcular Limites Globais
+dados_num <- df_radar %>% select(Acidez, Umidade, Cinzas, Proteina, Lipidios, Aw, pH)
+max_global <- apply(dados_num, 2, max, na.rm = TRUE) * 1.1
+min_global <- apply(dados_num, 2, min, na.rm = TRUE) * 0.9
+
+# 4. Configurar Janela de Plotagem (2 linhas, 3 colunas)
+par(mfrow = c(2, 3), mar = c(1, 1, 2, 1), oma = c(0, 0, 3, 0))
+cores_borda <- c("#1B9E77", "#D95F02", "#7570B3", "#E7298A")
+cores_fundo <- alpha(cores_borda, 0.2)
+meses_ordem <- c("Fevereiro", "Março", "Abril", "Maio", "Junho")
+
+# 5. Loop para gerar os 5 meses
+for (mes in meses_ordem) {
+  df_mes <- df_radar %>% filter(Meses == mes)
+  
+  if(nrow(df_mes) == 0) next 
+  
+  nomes_tratamentos <- df_mes$Pimenta
+  df_mes_num <- df_mes %>% select(Acidez, Umidade, Cinzas, Proteina, Lipidios, Aw, pH) %>% as.data.frame()
+  rownames(df_mes_num) <- nomes_tratamentos
+  
+  dados_radar_plot <- rbind(max_global, min_global, df_mes_num)
+  
+  radarchart(
+    dados_radar_plot,
+    pcol = cores_borda, pfcol = cores_fundo, plwd = 2, plty = 1,
+    cglcol = "grey50", cglty = 3, cglwd = 1, axislabcol = "grey30",
+    vlcex = 0.9, 
+    title = paste("Mês:", mes) 
+  )
+}
+
+# 6. Adicionar Legenda (Ajustei o tamanho para os nomes não ficarem esmagados)
+plot.new() 
+legend(
+  x = "center",
+  legend = unique(df_radar$Pimenta), 
+  col = cores_borda,
+  bty = "n", 
+  pch = 15, pt.cex = 2, cex = 1, # Reduzi levemente o texto (cex=1) para caber melhor
+  text.col = "black", text.font = 2
+)
+
+mtext("Evolução Temporal da Assinatura Físico-Química", outer = TRUE, font = 2, cex = 1.5)
 
 
 
