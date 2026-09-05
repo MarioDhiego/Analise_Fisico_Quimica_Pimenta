@@ -1122,6 +1122,521 @@ print(grafico_pca_limpo)
 
 
 
+#------------------------------------------------------------------------------#
+# Parametro : Liípios
+
+
+
+# 1. Importar e Limpar os Dados
+df_lip <- read_excel("Banco_Fabiana.xlsx", sheet = "Banco_Lipidios") %>%
+  mutate(Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+         Meses = factor(Meses, levels = c("Fevereiro", "Março", "Abril", "Maio", "Junho")),
+         Pimenta = factor(str_trim(Pimenta))) %>%
+  rename(Lipidios = `% Lipídios`)
+
+# 2. Gerar a Tabela Descritiva
+tabela_lip <- df_lip %>%
+  tbl_continuous(
+    variable = Lipidios,
+    by = Meses,
+    include = Pimenta,
+    statistic = ~ "{mean} ± {sd}",
+    digits = ~ 2
+  ) %>%
+  modify_header(label = "**Tratamento (Pimenta)**") %>%
+  modify_caption("**Tabela 8. Evolução do teor de Lipídios (%) (Média ± SD) ao longo do armazenamento.**") %>%
+  bold_labels()
+
+tabela_lip
+
+
+
+
+
+
+
+library(ggplot2)
+
+# 1. Tabela resumo de Médias e SD
+df_resumo_lip <- df_lip %>%
+  group_by(Meses, Pimenta) %>%
+  summarise(Media = mean(Lipidios, na.rm=TRUE), SD = sd(Lipidios, na.rm=TRUE), .groups="drop")
+
+pd <- position_dodge(width = 0.4)
+
+# 2. Gerar o gráfico
+grafico_tendencia_lip <- ggplot() +
+  geom_jitter(data = df_lip, aes(x = Meses, y = Lipidios, group = Pimenta),
+              position = position_jitterdodge(jitter.width = 0.05, dodge.width = 0.4), color = "gray60", alpha = 0.5, size = 2) +
+  geom_errorbar(data = df_resumo_lip, aes(x = Meses, ymin = Media - SD, ymax = Media + SD, group = Pimenta, color = Pimenta),
+                position = pd, width = 0.2, size = 0.8) +
+  geom_line(data = df_resumo_lip, aes(x = Meses, y = Media, group = Pimenta, color = Pimenta), position = pd, size = 1.2) +
+  geom_point(data = df_resumo_lip, aes(x = Meses, y = Media, fill = Pimenta, group = Pimenta),
+             shape = 21, size = 4, color = "black", stroke = 1, position = pd) +
+  
+  scale_color_brewer(palette = "Dark2") + 
+  scale_fill_brewer(palette = "Dark2") +
+  
+  labs(title = "Parâmetros Físico-Quimico", 
+       #x = "Meses de Armazenamento", 
+       y = "Lipídios (%)", 
+       fill = "Tratamento", 
+       color = "Tratamento") +
+  
+  theme_bw() + 
+  theme(
+    text = element_text(size = 12), 
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "bottom",
+    legend.background = element_blank(),
+    legend.title = element_text(face = "bold"),
+    legend.text = element_text(size = 10)
+  ) +
+  guides(color = guide_legend(ncol = 2), fill = guide_legend(ncol = 2))
+
+print(grafico_tendencia_lip)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+library(ggplot2)
+library(dplyr)
+
+# 1. Preparar dados (já importados no df_lip)
+df_in_natura_lip <- df_lip %>% filter(Pimenta == "In Natura")
+
+# 2. Calcular Limites Baseados em Fevereiro
+baseline_lip <- df_in_natura_lip %>% filter(Meses == "Fevereiro")
+media_controle_lip <- mean(baseline_lip$Lipidios, na.rm = TRUE)
+sd_controle_lip <- sd(baseline_lip$Lipidios, na.rm = TRUE)
+
+LSC_lip <- media_controle_lip + (3 * sd_controle_lip) # Aprox 0.16
+LIC_lip <- media_controle_lip - (3 * sd_controle_lip) # Aprox 0.01
+
+# 3. Resumo de Médias de Todos os Tratamentos
+df_medias_todas_lip <- df_lip %>%
+  group_by(Meses, Pimenta) %>%
+  summarise(Media = mean(Lipidios, na.rm=TRUE), SD = sd(Lipidios, na.rm=TRUE), .groups="drop")
+
+# 4. GRÁFICO 1: Apenas In Natura
+graf_controle_innatura_lip <- ggplot(df_medias_todas_lip %>% filter(Pimenta == "In Natura"), aes(x = Meses, y = Media, group = 1)) +
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = LIC_lip, ymax = LSC_lip, fill = "gray70", alpha = 0.3) +
+  geom_ribbon(aes(ymin = Media - SD, ymax = Media + SD, fill = "Zona de Estabilidade"), alpha = 0.2) +
+  geom_hline(aes(yintercept = media_controle_lip, color = "Média"), linetype = "dashed", size = 0.8) +
+  geom_hline(aes(yintercept = LSC_lip, color = "LSC (+3 SD: 0.16%)"), linetype = "dotted", size = 1) +
+  geom_hline(aes(yintercept = LIC_lip, color = "LIC (-3 SD: 0.01%)"), linetype = "dotted", size = 1) +
+  geom_line(color = "blue", size = 1.2) + 
+  geom_point(size = 4, shape = 21, fill = "blue", color = "white", stroke = 1.2) +
+  scale_color_manual(name = "Limites", values = c("Média" = "darkgreen", "LSC (+3 SD: 0.16%)" = "red", "LIC (-3 SD: 0.01%)" = "red")) +
+  scale_fill_manual(name = "Dispersão", values = c("Zona de Estabilidade" = "blue")) +
+  labs(title = "Controle de Estabilidade - Lipídios (In Natura)", x = "Meses de Armazenamento", y = "Lipídios (%)") +
+  theme_bw() + 
+  theme(legend.position = c(0.22, 0.85), legend.background = element_rect(fill = alpha("white", 0.9), color = "black"),
+        text = element_text(size = 12), plot.title = element_text(face = "bold"))
+
+# 5. GRÁFICO 2: Todos os Tratamentos na Zona de Controle
+graf_controle_todos_lip <- ggplot(df_medias_todas_lip, aes(x = Meses, y = Media, group = Pimenta, color = Pimenta)) +
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = LIC_lip, ymax = LSC_lip, fill = "gray70", alpha = 0.3) +
+  geom_hline(yintercept = media_controle_lip, linetype = "dashed", color = "darkgreen", size = 0.8) +
+  geom_hline(yintercept = LSC_lip, linetype = "dotted", color = "red", size = 1) +
+  geom_hline(yintercept = LIC_lip, linetype = "dotted", color = "red", size = 1) +
+  geom_line(size = 1.2) + 
+  geom_point(aes(fill = Pimenta), shape = 21, size = 3, color = "black") +
+  scale_color_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
+  labs(title = "Controle de Estabilidade Comparativo - Lipídios", x = "Meses de Armazenamento", y = "Lipídios (%)") +
+  theme_bw() + 
+  theme(legend.position = "bottom", legend.direction = "horizontal",
+        text = element_text(size = 12), plot.title = element_text(face = "bold")) +
+  guides(color = guide_legend(ncol = 2), fill = guide_legend(ncol = 2))
+
+print(graf_controle_innatura_lip)
+print(graf_controle_todos_lip)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 2. Garantir que a base de dados está limpa (caso não tenha rodado o script anterior hoje)
+df_lip <- read_excel("Banco_Fabiana.xlsx", sheet = "Banco_Lipidios") %>%
+  mutate(Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+         Meses = factor(Meses, levels = c("Fevereiro", "Março", "Abril", "Maio", "Junho")),
+         Pimenta = factor(str_trim(Pimenta))) %>%
+  rename(Lipidios = `% Lipídios`)
+
+# ==============================================================================
+# 3. ANOVA FATORIAL (COM TRANSFORMAÇÃO EM RAIZ QUADRADA)
+# O uso da função sqrt() resolve o problema de normalidade dos lipídios
+# ==============================================================================
+modelo_lip <- aov(sqrt(Lipidios) ~ Pimenta * Meses, data = df_lip)
+
+print("--- QUADRO DA ANOVA FATORIAL (LIPÍDIOS) ---")
+summary(modelo_lip)
+
+# ==============================================================================
+# 4. TESTE DE MÉDIAS (TUKEY) PARA A INTERAÇÃO
+# ==============================================================================
+# Criar uma coluna combinando Tratamento e Mês para o Tukey comparar tudo
+df_lip$Trat_Mes <- interaction(df_lip$Pimenta, df_lip$Meses, sep = " em ")
+
+# Rodar a ANOVA novamente apenas para essa coluna combinada (exigência do agricolae)
+modelo_int_lip <- aov(sqrt(Lipidios) ~ Trat_Mes, data = df_lip)
+
+# Executar o Tukey
+tukey_lip <- HSD.test(modelo_int_lip, "Trat_Mes", group = TRUE)
+
+print("--- LETRAS DO TESTE DE TUKEY (LIPÍDIOS) ---")
+print(tukey_lip$groups)
+
+
+
+
+# PCA ATUALIZADO 
+
+# 2. Função rápida para importar e padronizar os nomes de Pimenta e Meses
+limpar_base <- function(arquivo, aba, var_resposta) {
+  df <- read_excel(arquivo, sheet = aba)
+  
+  # Padronizar nomes
+  df <- df %>%
+    mutate(Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+           Pimenta = str_trim(Pimenta))
+  
+  # Calcular a média por Tratamento e Mês
+  df_media <- df %>%
+    group_by(Pimenta, Meses) %>%
+    summarise(Media_Var = mean(!!sym(var_resposta), na.rm = TRUE), .groups = "drop")
+  
+  # Renomear a coluna da média para o nome real da variável
+  colnames(df_media)[3] <- var_resposta 
+  return(df_media)
+}
+
+# 3. Importar as 5 planilhas do arquivo atualizado e extrair as médias
+arquivo_base <- "Banco_Fabiana.xlsx"
+
+df_acidez <- limpar_base(arquivo_base, "Banco_Acidez", "% acidez")
+df_umidade <- limpar_base(arquivo_base, "Banco_Umidade", "% umidade")
+df_cinzas <- limpar_base(arquivo_base, "Banco_Cinzas", "% Cinzas")
+df_proteina <- limpar_base(arquivo_base, "Banco_Proteinas", "% Proteína")
+df_lipidios <- limpar_base(arquivo_base, "Banco_Lipidios", "% Lipídios")
+
+# 4. Fundir (Merge) todas as planilhas em um único Banco Multivariado
+df_multivariado <- df_acidez %>%
+  left_join(df_umidade, by = c("Pimenta", "Meses")) %>%
+  left_join(df_cinzas, by = c("Pimenta", "Meses")) %>%
+  left_join(df_proteina, by = c("Pimenta", "Meses")) %>%
+  left_join(df_lipidios, by = c("Pimenta", "Meses"))
+
+# Renomear colunas para ficar elegante no gráfico
+colnames(df_multivariado) <- c("Tratamento", "Mes", "Acidez", "Umidade", "Cinzas", "Proteina", "Lipidios")
+
+# Criar rótulo (Tratamento - Mês) para virar o nome das linhas
+df_multivariado <- df_multivariado %>%
+  mutate(Rotulo = paste(Tratamento, Mes, sep = " - ")) %>%
+  as.data.frame()
+rownames(df_multivariado) <- df_multivariado$Rotulo
+
+# 5. Executar a PCA (Nas colunas 3 a 7)
+res.pca <- PCA(df_multivariado[, 3:7], scale.unit = TRUE, graph = FALSE)
+
+# 6. Gerar o Gráfico Biplot Limpo (Apenas bolinhas e setas)
+grafico_pca_5var <- fviz_pca_biplot(res.pca,
+                                    
+                                    # Indivíduos (Bolinhas sem texto)
+                                    geom.ind = "point",        
+                                    col.ind = df_multivariado$Tratamento,
+                                    fill.ind = df_multivariado$Tratamento,
+                                    palette = "Dark2",
+                                    pointsize = 4,             
+                                    pointshape = 21,           
+                                    addEllipses = TRUE,        
+                                    ellipse.level = 0.95,
+                                    ellipse.alpha = 0.15,      
+                                    
+                                    # Variáveis (Setas com texto)
+                                    label = "var",             
+                                    col.var = "red",          
+                                    arrowsize = 0.8,
+                                    labelsize = 5,
+                                    repel = TRUE,              
+                                    
+                                    # Textos e Temas
+                                    title = "Análise de Componentes Principais (PCA) - Perfil de Qualidade Global",
+                                    legend.title = "Tratamento"
+) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 12),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "bottom"
+  ) +
+  guides(color = guide_legend(ncol = 2), fill = guide_legend(ncol = 2))
+
+# Exibir o gráfico atualizado
+print(grafico_pca_5var)
+
+
+
+
+
+
+
+
+
+# 1. Carregar Pacotes
+library(readxl)
+library(dplyr)
+library(stringr)
+library(corrplot)
+
+
+
+arquivo_base <- "Banco_Fabiana.xlsx"
+
+# 2. Nova função: retorna a tabela completa (com Pimenta e Meses) para podermos alinhar
+limpar_base <- function(aba, var_origem, nome_nova_coluna) {
+  read_excel(arquivo_base, sheet = aba) %>%
+    mutate(Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+           Pimenta = str_trim(Pimenta)) %>%
+    group_by(Pimenta, Meses) %>%
+    summarise(!!sym(nome_nova_coluna) := mean(!!sym(var_origem), na.rm = TRUE), .groups = "drop")
+}
+
+# 3. Extrair as médias de cada variável separadamente
+df_acidez   <- limpar_base("Banco_Acidez", "% acidez", "Acidez")
+df_umidade  <- limpar_base("Banco_Umidade", "% umidade", "Umidade")
+df_cinzas   <- limpar_base("Banco_Cinzas", "% Cinzas", "Cinzas")
+df_proteina <- limpar_base("Banco_Proteinas", "% Proteína", "Proteina")
+df_lipidios <- limpar_base("Banco_Lipidios", "% Lipídios", "Lipidios")
+
+# 4. Unir tudo com segurança usando left_join (alinha pelo Tratamento e Mês)
+df_correlacao <- df_umidade %>%
+  left_join(df_acidez, by = c("Pimenta", "Meses")) %>%
+  left_join(df_cinzas, by = c("Pimenta", "Meses")) %>%
+  left_join(df_proteina, by = c("Pimenta", "Meses")) %>%
+  left_join(df_lipidios, by = c("Pimenta", "Meses"))
+
+# 5. Selecionar apenas as colunas numéricas para a matriz
+df_numeros <- df_correlacao %>% select(Acidez, Umidade, Cinzas, Proteina, Lipidios)
+
+# Calcular a Matriz de Correlação (ignorando os espaços vazios da acidez com "pairwise.complete.obs")
+matriz_pearson <- cor(df_numeros, use = "pairwise.complete.obs", method = "pearson")
+
+# Calcular os p-valores da correlação
+teste_sig <- cor.mtest(df_numeros, conf.level = 0.95, na.action = "na.omit")
+
+# 6. Gerar o Gráfico Correlograma
+corrplot(matriz_pearson, 
+         method = "color",           
+         type = "lower",             
+         addCoef.col = "black",      
+         tl.col = "black",           
+         tl.srt = 45,                
+         p.mat = teste_sig$p,        
+         sig.level = 0.05,           
+         insig = "pch",              
+         pch.col = "gray40",         
+         col = colorRampPalette(c("#B2182B", "white", "#2166AC"))(200), 
+         title = "Matriz de Correlação de Pearson - Atributos Físico-Químicos",
+         mar = c(0,0,2,0))
+
+
+
+
+# 1. Carregar pacotes
+library(dplyr)
+library(stringr)
+library(pheatmap)
+
+# 2. Preparar os dados e criar Nomes Curtos para limpar a poluição visual
+df_heat <- df_correlacao %>%
+  na.omit() %>%
+  mutate(
+    # Cria uma sigla curta para cada tratamento
+    Trat_Curto = case_when(
+      Pimenta == "In Natura" ~ "Controle",
+      Pimenta == "Solução Filmogenica" ~ "SF",
+      Pimenta == "Solução Filmogenica+Oleo de Canela" ~ "SF+Canela",
+      Pimenta == "Solução Filmogenica+Oleo de Cipo de Alho" ~ "SF+Cipó",
+      TRUE ~ Pimenta
+    ),
+    # Pega apenas as 3 primeiras letras do mês (Fev, Mar, Abr, Mai, Jun)
+    Mes_Curto = str_sub(Meses, 1, 3) 
+  )
+
+# 3. Criar a matriz numérica isolada
+matriz_heat <- df_heat %>%
+  select(Acidez, Umidade, Cinzas, Proteina, Lipidios) %>%
+  as.matrix()
+
+# 4. Aplicar os rótulos curtos nas linhas (Ex: "SF+Canela - Fev")
+rownames(matriz_heat) <- paste(df_heat$Trat_Curto, df_heat$Mes_Curto, sep = " - ")
+
+# 5. Gerar o Heatmap com os Valores Reais
+pheatmap(
+  matriz_heat,
+  scale = "column",                    # Padroniza as cores matematicamente (Z-score)
+  
+  # --- O SEGREDO DOS NÚMEROS ESTÁ AQUI ---
+  display_numbers = round(matriz_heat, 2), # Imprime o valor original arredondado (2 casas)
+  number_color = "black",              # Cor do número
+  fontsize_number = 9,                 # Tamanho do número dentro do quadrado
+  
+  # Cores e Layout
+  color = colorRampPalette(c("navy", "white", "firebrick3"))(100),
+  clustering_method = "ward.D2",       
+  clustering_distance_rows = "euclidean",
+  
+  # Textos e Fontes Reduzidas
+  show_rownames = TRUE,                
+  show_colnames = TRUE,                
+  fontsize_row = 10,                   # Fonte lateral num tamanho agradável
+  fontsize_col = 11,                   
+  angle_col = 45,                      
+  
+  # Estética da Árvore e Bordas
+  treeheight_row = 50,                 
+  treeheight_col = 25,                 
+  border_color = "gray90",             # Borda cinza bem clara para separar os quadrados
+  
+  main = "Assinatura Química Global"
+)
+
+
+
+
+
+
+#-----------------------------------------------------------------------------#
+# Parametro: Atividade na agua + pH
+
+
+
+library(readxl)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+
+# 1. Importar e Limpar
+df_aw <- read_excel("Banco_Fabiana.xlsx", sheet = "Atividade_de_Agua") %>%
+  mutate(Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+         Meses = factor(Meses, levels = c("Fevereiro", "Março", "Abril", "Maio", "Junho")),
+         Pimenta = factor(str_trim(Pimenta))) %>%
+  rename(Aw = `Valor aferido`)
+
+# 2. Gerar Gráfico de Trajetória Absoluta (Sem barras de erro devido a N=1)
+grafico_aw <- ggplot(df_aw, aes(x = Meses, y = Aw, group = Pimenta, color = Pimenta)) +
+  # Faixa de Segurança Microbiológica (Fundo verde clarinho indicando estabilidade)
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = 0, ymax = 0.65, fill = "lightgreen", alpha = 0.2) +
+  geom_line(size = 1.2) +
+  geom_point(aes(fill = Pimenta), shape = 21, size = 4, color = "black", stroke = 1) +
+  scale_color_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
+  labs(title = "Evolução da Atividade de Água (Aw)", x = "Meses de Armazenamento", y = "Atividade de Água (Aw)") +
+  theme_bw() +
+  theme(legend.position = "bottom", plot.title = element_text(face = "bold", hjust = 0.5),
+        text = element_text(size = 12)) +
+  guides(color = guide_legend(ncol = 2), fill = guide_legend(ncol = 2))
+
+print(grafico_aw)
+
+
+
+
+# 1. Importar e Limpar
+df_ph <- read_excel("Banco_Fabiana.xlsx", sheet = "pH") %>%
+  rename(Meses = Fevereiro, pH = `pH Aferido`) %>%  # Corrigindo o nome da coluna
+  mutate(Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+         Meses = factor(Meses, levels = c("Fevereiro", "Março", "Abril", "Maio", "Junho")),
+         Pimenta = factor(str_trim(Pimenta)))
+
+# 2. Gerar Gráfico de Trajetória Absoluta
+grafico_ph <- ggplot(df_ph, aes(x = Meses, y = pH, group = Pimenta, color = Pimenta)) +
+  geom_line(size = 1.2) +
+  geom_point(aes(fill = Pimenta), shape = 21, size = 4, color = "black", stroke = 1) +
+  scale_color_brewer(palette = "Dark2") + scale_fill_brewer(palette = "Dark2") +
+  labs(title = "Evolução do pH", x = "Meses de Armazenamento", y = "pH") +
+  theme_bw() +
+  theme(legend.position = "bottom", plot.title = element_text(face = "bold", hjust = 0.5),
+        text = element_text(size = 12)) +
+  guides(color = guide_legend(ncol = 2), fill = guide_legend(ncol = 2))
+
+print(grafico_ph)
+
+
+
+# Instale o pacote se não tiver: install.packages("gt") e install.packages("tidyr")
+
+library(gt)
+
+# 1. Preparar Tabela de Atividade de Água (Aw)
+df_aw_tabela <- read_excel("Banco_Fabiana.xlsx", sheet = "Atividade_de_Agua") %>%
+  mutate(Meses = factor(str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"), 
+                        levels = c("Fevereiro", "Março", "Abril", "Maio", "Junho")),
+         Pimenta = str_trim(Pimenta)) %>%
+  select(Pimenta, Meses, `Valor aferido`) %>%
+  pivot_wider(names_from = Meses, values_from = `Valor aferido`)
+
+# Gerar visual da tabela Aw
+tabela_aw <- gt(df_aw_tabela) %>%
+  tab_header(title = md("**Tabela 10. Valores absolutos de Atividade de Água (Aw) durante o armazenamento**")) %>%
+  cols_label(Pimenta = md("**Tratamento**")) %>%
+  fmt_number(decimals = 2) %>%
+  tab_options(table.width = pct(100))
+
+# 2. Preparar Tabela de pH
+df_ph_tabela <- read_excel("Banco_Fabiana.xlsx", sheet = "pH") %>%
+  rename(Meses = Fevereiro, pH = `pH Aferido`) %>%
+  mutate(Meses = factor(str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"), 
+                        levels = c("Fevereiro", "Março", "Abril", "Maio", "Junho")),
+         Pimenta = str_trim(Pimenta)) %>%
+  select(Pimenta, Meses, pH) %>%
+  pivot_wider(names_from = Meses, values_from = pH)
+
+# Gerar visual da tabela pH
+tabela_ph <- gt(df_ph_tabela) %>%
+  tab_header(title = md("**Tabela 11. Valores absolutos de pH durante o armazenamento**")) %>%
+  cols_label(Pimenta = md("**Tratamento**")) %>%
+  fmt_number(decimals = 2) %>%
+  tab_options(table.width = pct(100))
+
+# Imprimir as tabelas (elas vão aparecer no Viewer do RStudio)
+tabela_aw
+tabela_ph
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
