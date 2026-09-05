@@ -1895,12 +1895,49 @@ legend(
 
 
 
-
+# ==============================================================================
+# 1. CARREGAR PACOTES NECESSÁRIOS
+# ==============================================================================
+library(readxl)
 library(dplyr)
+library(stringr)
 library(fmsb)
 library(scales)
 
-# 1. Recriar a Tabela Global SEM apagar os dados vazios (sem na.omit)
+# ==============================================================================
+# 2. IMPORTAÇÃO E PREPARAÇÃO DOS DADOS
+# ==============================================================================
+arquivo_unico <- "Banco_Fabiana.xlsx" # <-- COLOQUE O NOME DO SEU ARQUIVO AQUI
+
+# Função para extrair dados padronizados
+limpar_base <- function(aba, var_orig, var_nova) {
+  read_excel(arquivo_unico, sheet = aba) %>%
+    mutate(Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+           Pimenta = str_trim(Pimenta)) %>%
+    group_by(Pimenta, Meses) %>%
+    summarise(!!sym(var_nova) := mean(!!sym(var_orig), na.rm = TRUE), .groups = "drop")
+}
+
+# Função específica para o pH (que tinha o nome da coluna diferente)
+limpar_ph <- function() {
+  read_excel(arquivo_unico, sheet = "pH") %>%
+    rename(Meses = Fevereiro, pH = `pH Aferido`) %>% 
+    mutate(Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+           Pimenta = str_trim(Pimenta)) %>%
+    group_by(Pimenta, Meses) %>%
+    summarise(pH = mean(pH, na.rm = TRUE), .groups = "drop")
+}
+
+# Extrair todas as planilhas
+df_acidez   <- limpar_base("Banco_Acidez", "% acidez", "Acidez")
+df_umidade  <- limpar_base("Banco_Umidade", "% umidade", "Umidade")
+df_cinzas   <- limpar_base("Banco_Cinzas", "% Cinzas", "Cinzas")
+df_proteina <- limpar_base("Banco_Proteinas", "% Proteína", "Proteina")
+df_lipidios <- limpar_base("Banco_Lipidios", "% Lipídios", "Lipidios")
+df_aw       <- limpar_base("Atividade_de_Agua", "Valor aferido", "Aw")
+df_ph       <- limpar_ph()
+
+# Unir tudo em uma única base de dados
 df_radar <- df_umidade %>%
   left_join(df_acidez, by = c("Pimenta", "Meses")) %>%
   left_join(df_cinzas, by = c("Pimenta", "Meses")) %>%
@@ -1909,26 +1946,30 @@ df_radar <- df_umidade %>%
   left_join(df_aw, by = c("Pimenta", "Meses")) %>%
   left_join(df_ph, by = c("Pimenta", "Meses"))
 
-# 2. O TRUQUE: Preencher a Acidez faltante de Março com a média do tratamento
-# Isso permite que a teia de aranha se feche no desenho
+# Preencher a Acidez faltante de Março (imputação pela média do tratamento)
 df_radar <- df_radar %>%
   group_by(Pimenta) %>%
   mutate(Acidez = ifelse(is.na(Acidez), mean(Acidez, na.rm = TRUE), Acidez)) %>%
   ungroup() %>%
-  as.data.frame()
+  as.data.frame() # Garante que seja um data.frame clássico
 
-# 3. Calcular Limites Globais
+# ==============================================================================
+# 3. CONFIGURAÇÃO MATEMÁTICA DO RADAR GLOBOAL
+# ==============================================================================
+# Selecionar apenas os números para calcular o máximo e mínimo de todo o experimento
 dados_num <- df_radar %>% select(Acidez, Umidade, Cinzas, Proteina, Lipidios, Aw, pH)
 max_global <- apply(dados_num, 2, max, na.rm = TRUE) * 1.1
 min_global <- apply(dados_num, 2, min, na.rm = TRUE) * 0.9
 
-# 4. Configurar Janela de Plotagem (2 linhas, 3 colunas)
-par(mfrow = c(2, 3), mar = c(1, 1, 2, 1), oma = c(0, 0, 3, 0))
+# Configurar painel (2 linhas, 3 colunas) e cores
+par(mfrow = c(2, 3), mar = c(2, 1, 3, 1), oma = c(0, 0, 3, 0))
 cores_borda <- c("#1B9E77", "#D95F02", "#7570B3", "#E7298A")
 cores_fundo <- alpha(cores_borda, 0.2)
 meses_ordem <- c("Fevereiro", "Março", "Abril", "Maio", "Junho")
 
-# 5. Loop para gerar os 5 meses
+# ==============================================================================
+# 4. PLOTAGEM (LOOP PARA OS 5 MESES)
+# ==============================================================================
 for (mes in meses_ordem) {
   df_mes <- df_radar %>% filter(Meses == mes)
   
@@ -1944,23 +1985,62 @@ for (mes in meses_ordem) {
     dados_radar_plot,
     pcol = cores_borda, pfcol = cores_fundo, plwd = 2, plty = 1,
     cglcol = "grey50", cglty = 3, cglwd = 1, axislabcol = "grey30",
-    vlcex = 0.9, 
+    
+    # Textos da Teia (Aumentados e em Negrito)
+    vlcex = 1.0,        
+    font = 2,           
+    
+    # Título de cada gráfico individual
     title = paste("Mês:", mes) 
   )
 }
 
-# 6. Adicionar Legenda (Ajustei o tamanho para os nomes não ficarem esmagados)
+# ==============================================================================
+# 5. LEGENDA (6º ESPAÇO) E TÍTULO PRINCIPAL
+# ==============================================================================
 plot.new() 
-legend(
-  x = "center",
-  legend = unique(df_radar$Pimenta), 
-  col = cores_borda,
-  bty = "n", 
-  pch = 15, pt.cex = 2, cex = 1, # Reduzi levemente o texto (cex=1) para caber melhor
-  text.col = "black", text.font = 2
+
+# Nomes curtos para não "esmagar" a legenda
+nomes_legenda <- c(
+  "In Natura (Controle)", 
+  "Solução Filmogênica (SF)", 
+  "SF + Óleo de Canela", 
+  "SF + Óleo de Cipó-de-Alho"
 )
 
-mtext("Evolução Temporal da Assinatura Físico-Química", outer = TRUE, font = 2, cex = 1.5)
+legend(
+  x = "center",
+  legend = nomes_legenda, 
+  col = cores_borda,
+  bty = "n", 
+  pch = 15, pt.cex = 2, cex = 1, 
+  text.col = "black", 
+  text.font = 2,
+  y.intersp = 1.8 # Dá espaço para as linhas respirarem
+)
+
+# Título Final
+mtext("Evolução Temporal dos Parâmetros Físico-Química", 
+      outer = TRUE, 
+      font = 2, 
+      cex = 1.2)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
