@@ -555,6 +555,236 @@ print(letras_tukey_g %>% dplyr::select(Meses, Pimenta, emmean, .group))
 
 
 
+# ==============================================================================
+# 0. CARREGAR PACOTES
+# ==============================================================================
+library(readxl)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(emmeans)
+library(multcomp)
+library(gtsummary)
+
+# ==============================================================================
+# 1. IMPORTAÇÃO E LIMPEZA
+# ==============================================================================
+# ATENÇÃO: Ajustei o nome da aba para "Atividade_de_Agua" (como estava na sua lista)
+df_aw <- read_excel("Banco_Arthur.xlsx", 
+                    sheet = "Atividade_de_Agua") %>%
+  mutate(
+    Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+    Meses = factor(Meses, levels = c("Fevereiro", "Março", "Abril", "Maio", "Junho")),
+    Pimenta = as.factor(str_trim(Pimenta))
+  ) %>%
+  rename(Aw = `Valor aferido`) 
+
+# ==============================================================================
+# 2. TABELA RESUMO (gtsummary) - Cruzada
+# ==============================================================================
+tabela_gtsummary_aw <- df_aw %>%
+  dplyr::select(Pimenta, Meses, Aw) %>%
+  tbl_continuous(
+    variable = Aw,        
+    include = Pimenta,         
+    by = Meses,                
+    statistic = ~ "{mean} \u00B1 {sd}" 
+  ) %>%
+  modify_header(all_stat_cols() ~ "**{level}**") %>%
+  modify_header(label = "**Tratamento (Pimenta)**") %>%
+  modify_spanning_header(all_stat_cols() ~ "**Meses de Armazenamento**") %>%
+  bold_labels()
+
+print(tabela_gtsummary_aw)
+
+# ==============================================================================
+# 3. GRÁFICO DE TENDÊNCIA TEMPORAL
+# ==============================================================================
+df_resumo_aw <- df_aw %>%
+  group_by(Pimenta, Meses) %>%
+  summarise(Media = mean(Aw, na.rm = TRUE),
+            SD = sd(Aw, na.rm = TRUE), .groups = "drop")
+
+grafico_tendencia_aw <- ggplot(df_resumo_aw, aes(x = Meses, y = Media, group = Pimenta, color = Pimenta)) +
+  geom_line(size = 1.2) +
+  geom_point(aes(fill = Pimenta), shape = 21, size = 4, color = "black", stroke = 1) +
+  geom_errorbar(aes(ymin = Media - SD, ymax = Media + SD), width = 0.2, size = 0.8) +
+  scale_color_brewer(palette = "Set1") + 
+  scale_fill_brewer(palette = "Set1") +
+  labs(title = "Parâmetros Físico-Químicos",
+       y = "Atividade de Água (Aw)",
+       fill = "Tratamento", color = "Tratamento") + 
+  theme_bw() +
+  theme(
+    text = element_text(size = 12),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    panel.grid.minor = element_blank(),
+    legend.position = c(0.85, 0.12), # Ajuste para cima se os valores de Aw começarem altos
+    legend.background = element_rect(fill = alpha("white", 0.9), color = "black", size = 0.3),
+    legend.title = element_text(face = "bold"),
+    legend.text = element_text(size = 9)
+  )
+
+print(grafico_tendencia_aw)
+
+# ==============================================================================
+# 4. GRÁFICO DE CONTROLE DE ESTABILIDADE (Foco: In Natura)
+# ==============================================================================
+df_controle_aw <- df_aw %>% filter(Pimenta == "In Natura")
+media_global_aw <- mean(df_controle_aw$Aw, na.rm = TRUE)
+sd_global_aw <- sd(df_controle_aw$Aw, na.rm = TRUE)
+limite_sup_aw <- media_global_aw + (3 * sd_global_aw)
+limite_inf_aw <- media_global_aw - (3 * sd_global_aw)
+
+grafico_controle_aw <- ggplot(df_controle_aw, aes(x = Meses, y = Aw)) +
+  geom_hline(yintercept = media_global_aw, color = "blue", linetype = "dashed", size = 1) +
+  geom_hline(yintercept = limite_sup_aw, color = "red", linetype = "solid", size = 1) +
+  geom_hline(yintercept = limite_inf_aw, color = "red", linetype = "solid", size = 1) +
+  geom_jitter(width = 0.1, size = 3, color = "black", alpha = 0.7) +
+  stat_summary(fun = mean, geom = "line", group = 1, color = "blue", size = 1.2) +
+  labs(title = "Controle de Estabilidade - Atividade de Água (In Natura)",
+       subtitle = "Limites de Controle: \u00B1 3 SD",
+       y = "Aw", x = "Tempo") +
+  theme_classic() +
+  annotate("text", x = 5.2, y = limite_sup_aw + 0.01, label = "LSC", color = "red", fontface = "bold") +
+  annotate("text", x = 5.2, y = limite_inf_aw - 0.01, label = "LIC", color = "red", fontface = "bold")
+
+print(grafico_controle_aw)
+
+# ==============================================================================
+# 5. ANOVA E TESTE DE COMPARAÇÃO DE MÉDIAS (TUKEY)
+# ==============================================================================
+modelo_aw <- aov(Aw ~ Pimenta * Meses, data = df_aw)
+
+cat("\n--- TABELA DA ANOVA (Aw) ---\n")
+print(summary(modelo_aw))
+
+medias_tukey_aw <- emmeans(modelo_aw, ~ Pimenta | Meses)
+letras_tukey_aw <- cld(medias_tukey_aw, Letters = letters, adjust = "tukey") %>%
+  as.data.frame() %>% 
+  mutate(.group = str_trim(.group))
+
+cat("\n--- RESULTADO DO TESTE DE TUKEY (Aw) ---\n")
+print(letras_tukey_aw %>% dplyr::select(Meses, Pimenta, emmean, .group))
+
+
+
+
+
+
+# ==============================================================================
+# 1. IMPORTAÇÃO E LIMPEZA
+# ==============================================================================
+# Lendo a aba de pH
+df_ph <- read_excel("Banco_Arthur.xlsx", 
+                    sheet = "pH") %>%
+  mutate(
+    Meses = str_replace(str_to_title(str_trim(Meses)), "Marco", "Março"),
+    Meses = factor(Meses, levels = c("Fevereiro", "Março", "Abril", "Maio", "Junho")),
+    Pimenta = as.factor(str_trim(Pimenta))
+  ) %>%
+  # IMPORTANTE: Se o nome da coluna no seu Excel for diferente de "pH", ajuste aqui. 
+  # Exemplo: rename(pH = `Valor pH`) ou rename(pH = `Resultado pH`)
+  rename(pH = 'pH Aferido') 
+
+# ==============================================================================
+# 2. TABELA RESUMO (gtsummary) - Cruzada
+# ==============================================================================
+tabela_gtsummary_ph <- df_ph %>%
+  dplyr::select(Pimenta, Meses, pH) %>%
+  tbl_continuous(
+    variable = pH,        
+    include = Pimenta,         
+    by = Meses,                
+    statistic = ~ "{mean} \u00B1 {sd}" 
+  ) %>%
+  modify_header(all_stat_cols() ~ "**{level}**") %>%
+  modify_header(label = "**Tratamento (Pimenta)**") %>%
+  modify_spanning_header(all_stat_cols() ~ "**Meses de Armazenamento**") %>%
+  bold_labels()
+
+print(tabela_gtsummary_ph)
+
+# ==============================================================================
+# 3. GRÁFICO DE TENDÊNCIA TEMPORAL
+# ==============================================================================
+df_resumo_ph <- df_ph %>%
+  group_by(Pimenta, Meses) %>%
+  summarise(Media = mean(pH, na.rm = TRUE),
+            SD = sd(pH, na.rm = TRUE), .groups = "drop")
+
+grafico_tendencia_ph <- ggplot(df_resumo_ph, aes(x = Meses, y = Media, group = Pimenta, color = Pimenta)) +
+  geom_line(size = 1.2) +
+  geom_point(aes(fill = Pimenta), shape = 21, size = 4, color = "black", stroke = 1) +
+  geom_errorbar(aes(ymin = Media - SD, ymax = Media + SD), width = 0.2, size = 0.8) +
+  scale_color_brewer(palette = "Set1") + 
+  scale_fill_brewer(palette = "Set1") +
+  labs(title = "Parâmetros Físico-Químicos",
+       y = "pH",
+       fill = "Tratamento", color = "Tratamento") + 
+  theme_bw() +
+  theme(
+    text = element_text(size = 12),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    panel.grid.minor = element_blank(),
+    legend.position = c(0.15, 0.12), # Ajuste se as linhas do gráfico passarem por aqui
+    legend.background = element_rect(fill = alpha("white", 0.9), color = "black", size = 0.3),
+    legend.title = element_text(face = "bold"),
+    legend.text = element_text(size = 9)
+  )
+
+print(grafico_tendencia_ph)
+
+# ==============================================================================
+# 4. GRÁFICO DE CONTROLE DE ESTABILIDADE (Foco: In Natura)
+# ==============================================================================
+df_controle_ph <- df_ph %>% filter(Pimenta == "In Natura")
+media_global_ph <- mean(df_controle_ph$pH, na.rm = TRUE)
+sd_global_ph <- sd(df_controle_ph$pH, na.rm = TRUE)
+limite_sup_ph <- media_global_ph + (3 * sd_global_ph)
+limite_inf_ph <- media_global_ph - (3 * sd_global_ph)
+
+grafico_controle_ph <- ggplot(df_controle_ph, aes(x = Meses, y = pH)) +
+  geom_hline(yintercept = media_global_ph, color = "blue", linetype = "dashed", size = 1) +
+  geom_hline(yintercept = limite_sup_ph, color = "red", linetype = "solid", size = 1) +
+  geom_hline(yintercept = limite_inf_ph, color = "red", linetype = "solid", size = 1) +
+  geom_jitter(width = 0.1, size = 3, color = "black", alpha = 0.7) +
+  stat_summary(fun = mean, geom = "line", group = 1, color = "blue", size = 1.2) +
+  labs(title = "Controle de Estabilidade - pH (In Natura)",
+       subtitle = "Limites de Controle: \u00B1 3 SD",
+       y = "pH", x = "Tempo") +
+  theme_classic() +
+  annotate("text", x = 5.2, y = limite_sup_ph + 0.05, label = "LSC", color = "red", fontface = "bold") +
+  annotate("text", x = 5.2, y = limite_inf_ph - 0.05, label = "LIC", color = "red", fontface = "bold")
+
+print(grafico_controle_ph)
+
+# ==============================================================================
+# 5. ANOVA E TESTE DE COMPARAÇÃO DE MÉDIAS (TUKEY)
+# ==============================================================================
+modelo_ph <- aov(pH ~ Pimenta * Meses, data = df_ph)
+
+cat("\n--- TABELA DA ANOVA (pH) ---\n")
+print(summary(modelo_ph))
+
+medias_tukey_ph <- emmeans(modelo_ph, ~ Pimenta | Meses)
+letras_tukey_ph <- cld(medias_tukey_ph, Letters = letters, adjust = "tukey") %>%
+  as.data.frame() %>% 
+  mutate(.group = str_trim(.group))
+
+cat("\n--- RESULTADO DO TESTE DE TUKEY (pH) ---\n")
+print(letras_tukey_ph %>% dplyr::select(Meses, Pimenta, emmean, .group))
+
+
+
+
+
+
+
+
+
+
+
 
 
 
